@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Finance RAG Demo</title>
+    <style>
+      :root { --bg:#0b0d11; --fg:#e7e9ee; --muted:#9aa4b2; --card:#131720; --accent:#4f8cff; }
+      html, body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      .wrap { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+      .card { background: var(--card); border: 1px solid #222a3a; border-radius: 10px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
+      h1 { font-size: 20px; margin: 0 0 12px; }
+      .row { display:flex; gap:8px; margin-bottom:12px; }
+      input[type=text] { flex:1; padding:10px 12px; border-radius:8px; border:1px solid #2a3346; background:#0f131c; color:var(--fg); }
+      button { padding:10px 14px; border-radius:8px; border:1px solid #3156a6; background: var(--accent); color:white; cursor:pointer; font-weight:600; }
+      button:disabled { opacity:.6; cursor:wait; }
+      .muted { color: var(--muted); }
+      .answer { white-space: pre-wrap; background:#0f131c; padding:12px; border-radius:8px; border:1px solid #2a3346; }
+      .ctx, .metrics { background:#0f131c; padding:12px; border-radius:8px; border:1px solid #2a3346; }
+      .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+      .badge { display:inline-block; padding:2px 6px; background:#1a2233; border:1px solid #2a3346; border-radius:6px; font-size:12px; margin-right:6px; }
+      a { color:#9fb9ff; text-decoration:none; }
+      .footer { margin-top:16px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Finance RAG Demo</h1>
+        <div class="row">
+          <input id="q" type="text" placeholder="Ask a question about the documents…" value="What were the key risk factors disclosed?" />
+          <button id="ask">Ask</button>
+        </div>
+        <div class="muted">Sources: sample regulatory filing, investment report, and market commentary in <code>data/raw/</code>.</div>
+      </div>
+
+      <div class="grid" style="margin-top:12px;">
+        <div class="card">
+          <h1>Answer</h1>
+          <div id="answer" class="answer">—</div>
+          <div id="cites" class="footer muted"></div>
+        </div>
+
+        <div class="card">
+          <h1>Evaluation</h1>
+          <div id="metrics" class="metrics">—</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <h1>Top Contexts</h1>
+        <div id="contexts" class="ctx">—</div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const askBtn = $('ask');
+      const qIn = $('q');
+      const answerEl = $('answer');
+      const citesEl = $('cites');
+      const metricsEl = $('metrics');
+      const ctxEl = $('contexts');
+
+      async function ask() {
+        const query = qIn.value.trim();
+        if (!query) return;
+        askBtn.disabled = true;
+        answerEl.textContent = 'Thinking…';
+        metricsEl.textContent = '—';
+        ctxEl.textContent = '—';
+        citesEl.textContent = '';
+        try {
+          const resp = await fetch('/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+          });
+          const data = await resp.json();
+          answerEl.textContent = data.answer;
+          if (data.citations && data.citations.length) {
+            citesEl.innerHTML = data.citations.map(c => `<span class="badge">${c.source.split('/').pop()} #L${c.line}</span>`).join('');
+          } else {
+            citesEl.textContent = '(no citations)';
+          }
+          const m = data.metrics || {};
+          metricsEl.innerHTML = `
+            <div><span class="badge">support_coverage</span> ${Number(m.support_coverage||0).toFixed(3)}</div>
+            <div><span class="badge">unsupported_sentence_count</span> ${m.unsupported_sentence_count||0}</div>
+            ${m.unsupported_sentences && m.unsupported_sentences.length ? '<div style="margin-top:6px;">Unsupported:</div>' + m.unsupported_sentences.map(s => `<div class="muted">- ${s}</div>`).join('') : ''}
+          `;
+          if (data.contexts && data.contexts.length) {
+            ctxEl.innerHTML = data.contexts.map((c, i) => `<div style="margin-bottom:10px;"><div class="muted">[${i+1}] ${c.source}</div><div>${c.text.substring(0, 500)}${c.text.length>500?'…':''}</div></div>`).join('');
+          }
+        } catch (e) {
+          answerEl.textContent = 'Error: ' + e;
+        } finally {
+          askBtn.disabled = false;
+        }
+      }
+
+      askBtn.addEventListener('click', ask);
+      qIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+    </script>
+  </body>
+  </html>
+
